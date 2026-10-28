@@ -28,6 +28,7 @@ class Settings(BaseModel):
     llm_api_key: str = os.getenv("LLM_API_KEY", "")
     social_enabled: bool = os.getenv("ENABLE_SOCIAL", "false").lower() == "true"
     fast_mode: bool = os.getenv("FAST_MODE", "true").lower() == "true"
+    frontend_url: str = os.getenv("FRONTEND_URL", "https://board-theta-one.vercel.app")
     db_path: Path = DB_PATH
     sample_dir: Path = SAMPLE_DIR
 

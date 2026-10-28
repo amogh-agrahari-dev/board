@@ -25,3 +25,5 @@ services:
         sync: false
       - key: ENABLE_SOCIAL
         value: "false"
+      - key: FRONTEND_URL
+        value: "https://board-theta-one.vercel.app"
