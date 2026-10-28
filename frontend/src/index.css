@@ -1,0 +1,292 @@
+:root {
+  --paper: #E9E4D8;
+  --ink: #111110;
+  --signal: #E8321B;
+  --gain: #1F6B3A;
+  --mute: #8A8577;
+  
+  --font-headline: 'Archivo', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-body: 'Newsreader', Georgia, serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+}
+
+/* HARD BANS: Zero rounded corners, zero soft shadows, zero gradients */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+body {
+  background-color: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 18px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* Typography styles */
+h1, h2, h3, h4, .headline {
+  font-family: var(--font-headline);
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: -0.04em;
+  line-height: 0.92;
+  color: var(--ink);
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Inverted utility blocks */
+.inverted {
+  background-color: var(--ink) !important;
+  color: var(--paper) !important;
+}
+.inverted h1, .inverted h2, .inverted h3, .inverted h4, .inverted p, .inverted span, .inverted div {
+  color: var(--paper) !important;
+}
+.inverted-signal {
+  background-color: var(--signal) !important;
+  color: var(--paper) !important;
+}
+
+/* Ruled ledger borders */
+.rule-2px {
+  border: 2px solid var(--ink);
+}
+.rule-b-2px {
+  border-bottom: 2px solid var(--ink);
+}
+.rule-t-2px {
+  border-top: 2px solid var(--ink);
+}
+.rule-l-2px {
+  border-left: 2px solid var(--ink);
+}
+.rule-r-2px {
+  border-right: 2px solid var(--ink);
+}
+.rule-hairline {
+  border-bottom: 1px solid var(--ink);
+}
+
+/* Broadsheet buttons */
+button, .btn {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 10px 18px;
+  background-color: var(--paper);
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: transform 120ms steps(2), background-color 120ms steps(2), color 120ms steps(2);
+}
+
+button:hover:not(:disabled), .btn:hover:not(:disabled) {
+  /* Hard offset block shadow */
+  box-shadow: 6px 6px 0 var(--ink) !important;
+  transform: translate(-2px, -2px);
+}
+
+button:active:not(:disabled), .btn:active:not(:disabled) {
+  transform: translate(0, 0);
+  box-shadow: 2px 2px 0 var(--ink) !important;
+}
+
+button:focus-visible, .btn:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 3px solid var(--signal) !important;
+  outline-offset: 2px;
+}
+
+button:disabled, .btn:disabled {
+  border-color: var(--mute);
+  color: var(--mute);
+  cursor: not-allowed;
+}
+
+.btn-inverted {
+  background-color: var(--ink);
+  color: var(--paper);
+}
+.btn-inverted:hover:not(:disabled) {
+  background-color: var(--signal);
+  color: var(--paper);
+  border-color: var(--signal);
+  box-shadow: 6px 6px 0 var(--ink) !important;
+}
+
+.btn-signal {
+  background-color: var(--signal);
+  color: var(--paper);
+  border-color: var(--signal);
+}
+
+/* Tags and chips */
+.tag {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 3px 6px;
+  border: 1px solid var(--ink);
+  display: inline-block;
+}
+.tag-signal {
+  background-color: var(--signal);
+  color: var(--paper);
+  border-color: var(--signal);
+}
+.tag-gain {
+  background-color: var(--gain);
+  color: var(--paper);
+  border-color: var(--gain);
+}
+.tag-mute {
+  border-color: var(--mute);
+  color: var(--mute);
+}
+.tag-inverted {
+  background-color: var(--ink);
+  color: var(--paper);
+}
+
+/* Tables: Ruled Ledger */
+table.ledger {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+
+table.ledger th {
+  background-color: var(--paper);
+  color: var(--ink);
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 12px 14px;
+  border-bottom: 2px solid var(--ink);
+  text-align: left;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+table.ledger td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--ink);
+  vertical-align: middle;
+}
+
+table.ledger tbody tr:hover {
+  background-color: var(--ink);
+  color: var(--paper);
+  cursor: pointer;
+}
+table.ledger tbody tr:hover td {
+  color: var(--paper);
+}
+table.ledger tbody tr:hover .tag {
+  border-color: var(--paper);
+}
+
+.text-right {
+  text-align: right;
+}
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Inputs */
+input, select, textarea {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  padding: 10px 14px;
+  border: 2px solid var(--ink);
+  background-color: var(--paper);
+  color: var(--ink);
+  width: 100%;
+}
+input:focus, select:focus, textarea:focus {
+  outline: 3px solid var(--signal);
+  outline-offset: 1px;
+}
+
+/* Master Layout */
+.app-container {
+  display: flex;
+  min-height: 100vh;
+  position: relative;
+}
+
+.sticky-rail {
+  width: 240px;
+  min-width: 240px;
+  border-right: 2px solid var(--ink);
+  background-color: var(--paper);
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  z-index: 100;
+}
+
+.content-pane {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.broadsheet-footer {
+  border-top: 2px solid var(--ink);
+  padding: 14px 24px;
+  background-color: var(--paper);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+/* Responsive adjustments */
+@media (max-width: 900px) {
+  .app-container {
+    flex-direction: column;
+  }
+  .sticky-rail {
+    width: 100%;
+    min-width: 100%;
+    height: auto;
+    position: relative;
+    border-right: none;
+    border-bottom: 2px solid var(--ink);
+  }
+  .broadsheet-footer {
+    flex-direction: column;
+    gap: 10px;
+    text-align: center;
+  }
+}
