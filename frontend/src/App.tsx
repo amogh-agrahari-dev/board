@@ -19,7 +19,8 @@ const DEFAULT_PROFILE: UserProfile = {
   holdings: [
     { ticker: "SPY", weight: 0.60 },
     { ticker: "AAPL", weight: 0.40 }
-  ]
+  ],
+  custom_tickers: []
 };
 
 export const App: React.FC = () => {
@@ -29,7 +30,20 @@ export const App: React.FC = () => {
 
   const [currentView, setCurrentView] = useState<string>("board");
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
-  const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
+  const [profile, setProfile] = useState<UserProfile>(() => {
+    try {
+      const saved = localStorage.getItem("board_profile");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          ...DEFAULT_PROFILE,
+          ...parsed,
+          custom_tickers: parsed.custom_tickers || []
+        };
+      }
+    } catch {}
+    return DEFAULT_PROFILE;
+  });
   const [assets, setAssets] = useState<ScreenAsset[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [asOf, setAsOf] = useState<string>("");
@@ -56,7 +70,7 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     loadScreenData();
-  }, [profile.market, profile.horizon_months, profile.risk_tolerance]);
+  }, [profile.market, profile.horizon_months, profile.risk_tolerance, JSON.stringify(profile.custom_tickers)]);
 
   const handleAcknowledgeGate = () => {
     localStorage.setItem("board_gate_ack", "true");
@@ -64,7 +78,19 @@ export const App: React.FC = () => {
   };
 
   const handleUpdateProfile = (updated: Partial<UserProfile>) => {
-    setProfile((prev) => ({ ...prev, ...updated }));
+    setProfile((prev) => {
+      let currency = updated.currency || prev.currency;
+      if (updated.market === "IN" && !updated.currency) {
+        currency = "INR";
+      } else if (updated.market === "US" && !updated.currency) {
+        currency = "USD";
+      }
+      const next = { ...prev, ...updated, currency };
+      try {
+        localStorage.setItem("board_profile", JSON.stringify(next));
+      } catch {}
+      return next;
+    });
   };
 
   const handleTriggerRefresh = async () => {
@@ -114,6 +140,7 @@ export const App: React.FC = () => {
         refreshing={refreshing}
         refreshProgress={refreshProgress}
         onTriggerRefresh={handleTriggerRefresh}
+        onSelectAsset={(t) => setSelectedTicker(t)}
       />
 
       {/* Primary Content View Pane */}

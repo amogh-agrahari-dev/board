@@ -68,3 +68,21 @@ export async function checkJobStatus(jobId: string) {
   if (!res.ok) throw new Error("Failed to check job status");
   return res.json();
 }
+
+export async function checkTicker(ticker: string): Promise<{
+  ticker: string;
+  name: string;
+  sector: string;
+  market: string;
+  current_price: number;
+  is_sample: boolean;
+  valid: boolean;
+}> {
+  const res = await fetch(`${BASE_URL}/asset/${encodeURIComponent(ticker)}/check`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Ticker not found" }));
+    throw new Error(err.detail || "Ticker not found");
+  }
+  return res.json();
+}
+

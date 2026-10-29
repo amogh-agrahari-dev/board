@@ -391,7 +391,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ profile, onSaveProfile
               {(["US", "IN", "BOTH"] as Market[]).map((m) => (
                 <button
                   key={m}
-                  onClick={() => setMarket(m)}
+                  onClick={() => {
+                    setMarket(m);
+                    if (m === "IN") setCurrency("INR");
+                    else if (m === "US") setCurrency("USD");
+                  }}
                   className={market === m ? "btn-inverted" : ""}
                   style={{ flex: 1, padding: "8px", fontSize: "11px" }}
                 >

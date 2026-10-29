@@ -12,6 +12,7 @@ export interface UserProfile {
   currency: string;
   max_position_size: number;
   holdings: Holding[];
+  custom_tickers?: string[];
 }
 
 export interface ScreenAsset {

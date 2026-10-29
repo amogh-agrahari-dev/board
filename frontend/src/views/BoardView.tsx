@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { ScreenAsset, UserProfile, Market } from "../types";
 import { ScoreBadge } from "../components/ScoreBadge";
+import { checkTicker } from "../api/client";
+import { formatRange } from "../utils/format";
 
 interface BoardViewProps {
   assets: ScreenAsset[];
@@ -25,6 +27,55 @@ export const BoardView: React.FC<BoardViewProps> = ({
   const [actionFilter, setActionFilter] = useState<string>("ALL");
   const [sortField, setSortField] = useState<keyof ScreenAsset>("opportunity_score");
   const [sortAsc, setSortAsc] = useState<boolean>(false);
+
+  // Custom asset search & add state
+  const [searchTicker, setSearchTicker] = useState<string>("");
+  const [isVerifying, setIsVerifying] = useState<boolean>(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchSuccess, setSearchSuccess] = useState<string | null>(null);
+
+  const handleAddCustomTicker = async (tickerToAdd?: string) => {
+    const raw = (tickerToAdd || searchTicker).trim().toUpperCase();
+    if (!raw) return;
+
+    const existingCustom = profile.custom_tickers || [];
+    if (existingCustom.includes(raw)) {
+      setSearchError(`Ticker ${raw} is already added to your Board.`);
+      return;
+    }
+
+    if (assets.some((a) => a.ticker === raw)) {
+      setSearchError(`Ticker ${raw} is already active on your Board.`);
+      return;
+    }
+
+    setIsVerifying(true);
+    setSearchError(null);
+    setSearchSuccess(null);
+
+    try {
+      const info = await checkTicker(raw);
+      const updated = [...existingCustom, raw];
+      onUpdateProfile({ custom_tickers: updated });
+      setSearchTicker("");
+      setSearchSuccess(`Added ${raw} (${info.name}) to your Board! Computing full tail-risk ledger...`);
+      setTimeout(() => setSearchSuccess(null), 6000);
+    } catch (err: any) {
+      setSearchError(err.message || `Could not find ticker "${raw}". Please verify the symbol.`);
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const handleRemoveCustomTicker = (tickerToRemove: string) => {
+    const existingCustom = profile.custom_tickers || [];
+    const updated = existingCustom.filter((t) => t !== tickerToRemove);
+    onUpdateProfile({ custom_tickers: updated });
+  };
+
+  const handleClearAllCustom = () => {
+    onUpdateProfile({ custom_tickers: [] });
+  };
 
   // Top 3 picks for the hero strip
   const topPicks = assets.slice(0, 3);
@@ -71,7 +122,12 @@ export const BoardView: React.FC<BoardViewProps> = ({
             {(["US", "IN", "BOTH"] as Market[]).map((m) => (
               <button
                 key={m}
-                onClick={() => onUpdateProfile({ market: m })}
+                onClick={() =>
+                  onUpdateProfile({
+                    market: m,
+                    currency: m === "IN" ? "INR" : (m === "US" ? "USD" : profile.currency)
+                  })
+                }
                 className={profile.market === m ? "btn-inverted" : ""}
                 style={{
                   border: "none",
@@ -86,6 +142,225 @@ export const BoardView: React.FC<BoardViewProps> = ({
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Search & Add Custom Asset Broadsheet Bar */}
+      <div
+        style={{
+          border: "2px solid var(--ink)",
+          backgroundColor: "var(--paper)",
+          padding: "20px 24px",
+          marginBottom: "28px"
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: "10px", marginBottom: "12px" }}>
+          <div>
+            <div className="mono" style={{ fontSize: "11px", fontWeight: 800, color: "var(--signal)" }}>
+              LIVE ASSET RESEARCH & TICKER DISCOVERY
+            </div>
+            <h3 style={{ fontSize: "22px", margin: "2px 0 0 0" }}>
+              RESEARCH ANY ASSET OR EXPAND THE BOARD
+            </h3>
+          </div>
+          <span className="mono" style={{ fontSize: "11px", color: "var(--mute)" }}>
+            SUPPORTS US (NYSE/NASDAQ) & INDIAN (NSE) EQUITIES
+          </span>
+        </div>
+
+        {/* Input & Action Buttons Row */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleAddCustomTicker();
+          }}
+          style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "stretch" }}
+        >
+          <div style={{ flex: "1 1 320px", display: "flex" }}>
+            <input
+              type="text"
+              value={searchTicker}
+              onChange={(e) => {
+                setSearchTicker(e.target.value.toUpperCase());
+                setSearchError(null);
+              }}
+              placeholder={profile.market === "IN" ? "ENTER NSE SYMBOL (E.G. TATAMOTORS.NS, WIPRO.NS, MARUTI.NS)..." : "ENTER TICKER SYMBOL (E.G. META, AMD, NFLX, COIN, TATAMOTORS.NS)..."}
+              className="mono"
+              disabled={isVerifying}
+              style={{
+                width: "100%",
+                padding: "12px 14px",
+                fontSize: "14px",
+                fontWeight: 700,
+                border: "2px solid var(--ink)",
+                borderRadius: 0,
+                backgroundColor: "#F4F0E8",
+                color: "var(--ink)",
+                letterSpacing: "0.05em"
+              }}
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={isVerifying || !searchTicker.trim()}
+            className="btn-inverted"
+            style={{ padding: "12px 20px", fontSize: "13px", fontWeight: 800 }}
+          >
+            {isVerifying ? "VERIFYING TICKER..." : "+ ADD TO BOARD"}
+          </button>
+
+          <button
+            type="button"
+            disabled={!searchTicker.trim()}
+            onClick={() => onSelectAsset(searchTicker.trim().toUpperCase())}
+            style={{ padding: "12px 20px", fontSize: "13px", fontWeight: 800 }}
+          >
+            VIEW DOSSIER →
+          </button>
+        </form>
+
+        {/* Status / Error / Success Messages */}
+        {searchError && (
+          <div
+            className="tag tag-signal"
+            style={{
+              display: "block",
+              marginTop: "12px",
+              padding: "8px 12px",
+              fontSize: "12px",
+              fontWeight: 700
+            }}
+          >
+            ⚠️ {searchError}
+          </div>
+        )}
+
+        {searchSuccess && (
+          <div
+            className="tag tag-gain"
+            style={{
+              display: "block",
+              marginTop: "12px",
+              padding: "8px 12px",
+              fontSize: "12px",
+              fontWeight: 700
+            }}
+          >
+            ✓ {searchSuccess}
+          </div>
+        )}
+
+        {/* Suggestion Chips */}
+        <div style={{ marginTop: "14px", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+          <span className="mono" style={{ fontSize: "10px", color: "var(--mute)", fontWeight: 700 }}>
+            QUICK ADD:
+          </span>
+          {(profile.market === "IN"
+            ? ["TATAMOTORS.NS", "WIPRO.NS", "MARUTI.NS", "BAJFINANCE.NS", "AXISBANK.NS"]
+            : profile.market === "US"
+            ? ["META", "AMD", "NFLX", "COIN", "BA", "DIS"]
+            : ["META", "AMD", "NFLX", "TATAMOTORS.NS", "WIPRO.NS", "COIN"]
+          ).map((preset) => {
+            const alreadyPresent = assets.some((a) => a.ticker === preset) || (profile.custom_tickers || []).includes(preset);
+            return (
+              <button
+                key={preset}
+                type="button"
+                disabled={alreadyPresent || isVerifying}
+                onClick={() => handleAddCustomTicker(preset)}
+                style={{
+                  border: "1px solid var(--ink)",
+                  padding: "4px 8px",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  backgroundColor: alreadyPresent ? "var(--mute)" : "var(--paper)",
+                  color: alreadyPresent ? "var(--paper)" : "var(--ink)",
+                  cursor: alreadyPresent ? "default" : "pointer",
+                  boxShadow: "none",
+                  transform: "none"
+                }}
+              >
+                {alreadyPresent ? `✓ ${preset}` : `+ ${preset}`}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Active Custom Tickers Strip */}
+        {(profile.custom_tickers && profile.custom_tickers.length > 0) && (
+          <div
+            style={{
+              marginTop: "16px",
+              paddingTop: "12px",
+              borderTop: "1px dashed var(--ink)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: "10px"
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+              <span className="mono" style={{ fontSize: "11px", fontWeight: 800 }}>
+                CUSTOM ASSETS ON BOARD ({profile.custom_tickers.length}):
+              </span>
+              {profile.custom_tickers.map((ct) => (
+                <span
+                  key={ct}
+                  className="tag tag-inverted"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "4px 8px",
+                    fontSize: "11px"
+                  }}
+                >
+                  <strong style={{ cursor: "pointer" }} onClick={() => onSelectAsset(ct)}>
+                    {ct}
+                  </strong>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemoveCustomTicker(ct);
+                    }}
+                    title={`Remove ${ct} from Board`}
+                    style={{
+                      border: "none",
+                      background: "transparent",
+                      color: "var(--signal)",
+                      cursor: "pointer",
+                      padding: 0,
+                      fontWeight: 900,
+                      fontSize: "12px",
+                      boxShadow: "none",
+                      transform: "none"
+                    }}
+                  >
+                    ✕
+                  </button>
+                </span>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={handleClearAllCustom}
+              style={{
+                fontSize: "10px",
+                padding: "4px 8px",
+                border: "1px solid var(--signal)",
+                color: "var(--signal)",
+                background: "transparent",
+                boxShadow: "none",
+                transform: "none"
+              }}
+            >
+              CLEAR ALL CUSTOM
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Hero Strip: Top 3 Picks (Inverted Block) */}
@@ -253,6 +528,11 @@ export const BoardView: React.FC<BoardViewProps> = ({
                       <span className="mono" style={{ fontSize: "10px", color: "var(--mute)" }}>
                         {asset.market}
                       </span>
+                      {profile.custom_tickers?.includes(asset.ticker) && (
+                        <span className="tag tag-inverted" style={{ fontSize: "9px", padding: "1px 5px" }}>
+                          CUSTOM
+                        </span>
+                      )}
                     </div>
                     <div style={{ fontSize: "12px", opacity: 0.85, fontFamily: "var(--font-body)" }}>
                       {asset.name}
@@ -276,7 +556,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
                     {(asset.prob_gain * 100).toFixed(1)}%
                   </td>
                   <td className="text-right mono" style={{ fontSize: "11px" }}>
-                    ${asset.expected_range ? `${asset.expected_range[0]} – ${asset.expected_range[1]}` : "—"}
+                    {formatRange(asset.expected_range, { ticker: asset.ticker, market: asset.market, currency: profile.currency })}
                   </td>
                   <td className="text-right mono" style={{ fontWeight: 700, color: asset.fuzzy_risk_score > 60 ? "var(--signal)" : "inherit" }}>
                     {asset.fuzzy_risk_score.toFixed(1)}
@@ -295,20 +575,45 @@ export const BoardView: React.FC<BoardViewProps> = ({
                     </div>
                   </td>
                   <td>
-                    <span
-                      className={`tag ${
-                        asset.action_label === "CANDIDATE"
-                          ? "tag-gain"
-                          : asset.action_label === "WATCH"
-                          ? "tag-inverted"
-                          : asset.action_label === "NO RELIABLE EDGE"
-                          ? "tag-mute"
-                          : "tag-signal"
-                      }`}
-                      style={{ fontSize: "10px", fontWeight: 700 }}
-                    >
-                      {asset.action_label}
-                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <span
+                        className={`tag ${
+                          asset.action_label === "CANDIDATE"
+                            ? "tag-gain"
+                            : asset.action_label === "WATCH"
+                            ? "tag-inverted"
+                            : asset.action_label === "NO RELIABLE EDGE"
+                            ? "tag-mute"
+                            : "tag-signal"
+                        }`}
+                        style={{ fontSize: "10px", fontWeight: 700 }}
+                      >
+                        {asset.action_label}
+                      </span>
+                      {profile.custom_tickers?.includes(asset.ticker) && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRemoveCustomTicker(asset.ticker);
+                          }}
+                          title={`Remove custom ticker ${asset.ticker} from Board`}
+                          style={{
+                            border: "1px solid var(--ink)",
+                            background: "transparent",
+                            padding: "2px 5px",
+                            fontSize: "11px",
+                            fontWeight: 900,
+                            color: "var(--signal)",
+                            cursor: "pointer",
+                            boxShadow: "none",
+                            transform: "none"
+                          }}
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

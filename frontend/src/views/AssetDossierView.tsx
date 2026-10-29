@@ -8,6 +8,7 @@ import { SvgLagChart } from "../components/SvgLagChart";
 import { SvgShapBars } from "../components/SvgShapBars";
 import { FuzzyRulesMatrix } from "../components/FuzzyRulesMatrix";
 import { DeterministicReport } from "../components/DeterministicReport";
+import { formatPrice } from "../utils/format";
 
 interface AssetDossierViewProps {
   ticker: string;
@@ -115,7 +116,7 @@ export const AssetDossierView: React.FC<AssetDossierViewProps> = ({
               {dossier.name} — {dossier.sector}
             </h3>
             <div className="mono" style={{ fontSize: "14px", marginTop: "8px" }}>
-              CURRENT QUOTE: <strong>${dossier.current_price.toFixed(2)}</strong>
+              CURRENT QUOTE: <strong>{formatPrice(dossier.current_price, { ticker: dossier.ticker, market: dossier.market, currency: profile.currency })}</strong>
             </div>
           </div>
 
@@ -146,6 +147,8 @@ export const AssetDossierView: React.FC<AssetDossierViewProps> = ({
           priceHistory={dossier.price_history}
           monteCarlo={dossier.monte_carlo}
           ticker={dossier.ticker}
+          market={dossier.market}
+          currency={profile.currency}
         />
 
         {/* Two-Column: Signals Panel & News Lag Profile */}
@@ -239,7 +242,7 @@ export const AssetDossierView: React.FC<AssetDossierViewProps> = ({
                         <td className="text-right mono" style={{ color: "var(--signal)", fontWeight: 700 }}>
                           {(s.drawdown * 100).toFixed(1)}%
                         </td>
-                        <td className="text-right mono">${s.implied_price.toFixed(2)}</td>
+                        <td className="text-right mono">{formatPrice(s.implied_price, { ticker: dossier.ticker, market: dossier.market, currency: profile.currency })}</td>
                       </tr>
                     ))}
                     <tr>
@@ -250,7 +253,7 @@ export const AssetDossierView: React.FC<AssetDossierViewProps> = ({
                       <td className="text-right mono" style={{ color: "var(--signal)", fontWeight: 700 }}>
                         {(risk.stress_tests.custom_shock.projected_loss * 100).toFixed(1)}%
                       </td>
-                      <td className="text-right mono">${risk.stress_tests.custom_shock.projected_price.toFixed(2)}</td>
+                      <td className="text-right mono">{formatPrice(risk.stress_tests.custom_shock.projected_price, { ticker: dossier.ticker, market: dossier.market, currency: profile.currency })}</td>
                     </tr>
                   </tbody>
                 </table>

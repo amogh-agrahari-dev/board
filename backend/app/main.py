@@ -96,6 +96,7 @@ class ProfileRequest(BaseModel):
     currency: str = "USD"
     max_position_size: float = 0.20
     holdings: List[Dict[str, Any]] = []
+    custom_tickers: List[str] = []
 
 class FitRequest(BaseModel):
     holdings: List[Dict[str, Any]] = []
@@ -106,14 +107,22 @@ class CustomShockRequest(BaseModel):
     volatility_shock: float = 0.50
 
 # ----------------- Helpers -----------------
-def get_active_universe(market: str = "US") -> List[str]:
+def get_active_universe(market: str = "US", custom_tickers: Optional[List[str]] = None) -> List[str]:
     in_tickers = ["RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS", "ICICIBANK.NS", "BHARTIARTL.NS", "ITC.NS", "LT.NS", "NIFTYBEES.NS", "SBIN.NS"]
     us_tickers = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "TSLA", "JPM", "SPY", "BRK-B", "XOM"]
     if market == "IN":
-        return in_tickers
+        base = list(in_tickers)
     elif market == "US":
-        return us_tickers
-    return us_tickers + in_tickers
+        base = list(us_tickers)
+    else:
+        base = list(us_tickers + in_tickers)
+        
+    if custom_tickers:
+        for ct in custom_tickers:
+            clean = ct.strip().upper()
+            if clean and clean not in base:
+                base.append(clean)
+    return base
 
 # ----------------- Endpoints -----------------
 @app.get("/api/health")
@@ -158,7 +167,34 @@ def get_universe(market: str = Query("US", regex="^(IN|US|BOTH)$")):
         "model_version": "1.0.0"
     }
 
-SCREEN_CACHE: Dict[Tuple[str, int, int], Tuple[float, Dict[str, Any]]] = {}
+SCREEN_CACHE: Dict[Tuple[str, int, int, Tuple[str, ...]], Tuple[float, Dict[str, Any]]] = {}
+
+@app.get("/api/asset/{ticker}/check")
+def check_ticker(ticker: str):
+    """
+    Validates a ticker symbol and fetches basic metadata before adding to board.
+    """
+    clean_ticker = ticker.strip().upper()
+    try:
+        fund = fetch_fundamentals(clean_ticker)
+        df, as_of, is_sample = fetch_ohlcv(clean_ticker, years=1)
+        if df is None or len(df) < 5:
+            raise HTTPException(status_code=404, detail=f"No price history found for '{clean_ticker}'")
+        curr_price = float(df["Close"].iloc[-1])
+        return {
+            "ticker": clean_ticker,
+            "name": fund.get("name", clean_ticker),
+            "market": "IN" if clean_ticker.endswith(".NS") else "US",
+            "sector": fund.get("sector", "Equities"),
+            "current_price": round(curr_price, 2),
+            "is_sample": is_sample,
+            "valid": True
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"Ticker check failed for {clean_ticker}: {e}")
+        raise HTTPException(status_code=400, detail=f"Could not load market data for '{clean_ticker}'. Check the symbol.")
 
 @app.post("/api/screen")
 def screen_universe(profile: ProfileRequest):
@@ -168,7 +204,8 @@ def screen_universe(profile: ProfileRequest):
     """
     market = profile.market
     horizon_days = 21 if profile.horizon_months <= 1 else (63 if profile.horizon_months <= 3 else 126)
-    cache_key = (market, profile.horizon_months, profile.risk_tolerance)
+    clean_custom = [c.strip().upper() for c in profile.custom_tickers if c.strip()]
+    cache_key = (market, profile.horizon_months, profile.risk_tolerance, tuple(sorted(clean_custom)))
     
     # Check cache (valid for 5 minutes)
     if cache_key in SCREEN_CACHE:
@@ -176,104 +213,116 @@ def screen_universe(profile: ProfileRequest):
         if time.time() - cached_ts < 300:
             return cached_resp
             
-    tickers = get_active_universe(market)
+    tickers = get_active_universe(market, clean_custom)
     
     funds = []
     ticker_data = {}
+    valid_tickers = []
     
     for t in tickers:
-        f = fetch_fundamentals(t)
-        df, as_of, is_sample = fetch_ohlcv(t, years=2)
-        close_pct = df["Close"].pct_change()
-        risk_metrics = compute_var_cvar(close_pct)
-        
-        funds.append({
-            "ticker": t,
-            "pe": f.get("pe") or 25.0,
-            "pb": f.get("pb") or 3.5,
-            "ps": f.get("ps") or 3.0,
-            "roa": f.get("roa") or 0.10,
-            "roe": f.get("roe") or 0.20,
-            "volatility": risk_metrics["annualized_vol"],
-            "sharpe": (0.12 - 0.04) / max(0.05, risk_metrics["annualized_vol"])
-        })
-        ticker_data[t] = (f, df, risk_metrics, as_of, is_sample)
+        try:
+            f = fetch_fundamentals(t)
+            df, as_of, is_sample = fetch_ohlcv(t, years=2)
+            if df is None or len(df) < 20:
+                continue
+            close_pct = df["Close"].pct_change()
+            risk_metrics = compute_var_cvar(close_pct)
+            
+            funds.append({
+                "ticker": t,
+                "pe": f.get("pe") or 25.0,
+                "pb": f.get("pb") or 3.5,
+                "ps": f.get("ps") or 3.0,
+                "roa": f.get("roa") or 0.10,
+                "roe": f.get("roe") or 0.20,
+                "volatility": risk_metrics["annualized_vol"],
+                "sharpe": (0.12 - 0.04) / max(0.05, risk_metrics["annualized_vol"])
+            })
+            ticker_data[t] = (f, df, risk_metrics, as_of, is_sample)
+            valid_tickers.append(t)
+        except Exception as e:
+            logger.warning(f"Error fetching data for ticker {t}: {e}")
+            continue
         
     tier_info = compute_universe_tiers(funds)
     ticker_tiers = tier_info["ticker_tiers"]
     
     raw_candidates = []
-    for t in tickers:
-        f, df, risk_metrics, as_of, is_sample = ticker_data[t]
-        
-        # News & Sentiment
-        raw_news = fetch_company_news(t, limit=5)
-        enriched_news = process_and_cache_news(t, raw_news)
-        integrated_df, lag_info = integrate_all_features(df, enriched_news)
-        
-        # Monte Carlo Fan
-        curr_price = float(df["Close"].iloc[-1])
-        mc = run_monte_carlo_fan(curr_price, df["Close"].pct_change(), horizon_days=horizon_days, paths=5000)
-        
-        # Fuzzy risk score
-        vol_pct = min(1.0, max(0.0, risk_metrics["annualized_vol"] / 0.60))
-        dd_weakness = min(1.0, max(0.0, abs(risk_metrics["max_drawdown"]) / 0.50))
-        sent_stress = min(1.0, max(0.0, (0.5 - lag_info.get("best_correlation", 0.0))))
-        fuzzy = evaluate_fuzzy_risk(vol_pct, dd_weakness, sent_stress)
-        
-        # Signals & Conflict
-        latest_row = integrated_df.iloc[-1].to_dict()
-        conf = compute_source_signals(
-            tech_row=latest_row,
-            lag_adjusted_sent=float(latest_row.get("sentiment_lag_adjusted", 0.0)),
-            macro_regime_stress=0.5,
-            model_expected_return=0.015
-        )
-        
-        # Walk forward baseline check
-        close_rets = df["Close"].pct_change().dropna().values
-        from app.features.integrate import FEATURE_GROUPS
-        wf = expanding_walk_forward_cv(
-            integrated_df[FEATURE_GROUPS["PRICE_TECH"]].fillna(0.0).values[-200:],
-            close_rets[-200:],
-            horizon_days=horizon_days,
-            n_splits=2
-        )
-        
-        # Raw opportunity
-        raw_opp = compute_raw_opportunity(
-            model_expected_return=0.018 if conf["composite_signal"] > 0 else -0.012,
-            confidence=conf["confidence"],
-            cvar_loss=risk_metrics["cvar_95_daily"] * np.sqrt(horizon_days),
-            risk_tolerance=profile.risk_tolerance
-        )
-        
-        raw_candidates.append({
-            "ticker": t,
-            "name": f.get("name", t),
-            "market": "IN" if t.endswith(".NS") else "US",
-            "sector": f.get("sector", "Equities"),
-            "tier": ticker_tiers.get(t, "FAIR"),
-            "current_price": curr_price,
-            "raw_opportunity": raw_opp["raw_opportunity"],
-            "mu": raw_opp["mu"],
-            "annualized_vol": risk_metrics["annualized_vol"],
-            "max_drawdown": risk_metrics["max_drawdown"],
-            "var_95_daily": risk_metrics["var_95_daily"],
-            "cvar_95_daily": risk_metrics["cvar_95_daily"],
-            "fuzzy_risk_score": fuzzy["risk_score"],
-            "prob_loss": mc["prob_loss"],
-            "prob_gain": mc["prob_gain"],
-            "expected_range": mc["range_90"],
-            "confidence": conf["confidence"],
-            "has_conflict": conf["has_conflict"],
-            "conflict_details": conf["conflict_details"],
-            "sentiment_excluded": not lag_info.get("usable_for_model", False),
-            "beats_baseline": wf.get("beats_baseline", True),
-            "directional_accuracy": wf.get("directional_accuracy", wf.get("dir_accuracy", 0.52)),
-            "as_of": as_of,
-            "is_sample": is_sample
-        })
+    for t in valid_tickers:
+        try:
+            f, df, risk_metrics, as_of, is_sample = ticker_data[t]
+            
+            # News & Sentiment
+            raw_news = fetch_company_news(t, limit=5)
+            enriched_news = process_and_cache_news(t, raw_news)
+            integrated_df, lag_info = integrate_all_features(df, enriched_news)
+            
+            # Monte Carlo Fan
+            curr_price = float(df["Close"].iloc[-1])
+            mc = run_monte_carlo_fan(curr_price, df["Close"].pct_change(), horizon_days=horizon_days, paths=5000)
+            
+            # Fuzzy risk score
+            vol_pct = min(1.0, max(0.0, risk_metrics["annualized_vol"] / 0.60))
+            dd_weakness = min(1.0, max(0.0, abs(risk_metrics["max_drawdown"]) / 0.50))
+            sent_stress = min(1.0, max(0.0, (0.5 - lag_info.get("best_correlation", 0.0))))
+            fuzzy = evaluate_fuzzy_risk(vol_pct, dd_weakness, sent_stress)
+            
+            # Signals & Conflict
+            latest_row = integrated_df.iloc[-1].to_dict()
+            conf = compute_source_signals(
+                tech_row=latest_row,
+                lag_adjusted_sent=float(latest_row.get("sentiment_lag_adjusted", 0.0)),
+                macro_regime_stress=0.5,
+                model_expected_return=0.015
+            )
+            
+            # Walk forward baseline check
+            close_rets = df["Close"].pct_change().dropna().values
+            from app.features.integrate import FEATURE_GROUPS
+            wf = expanding_walk_forward_cv(
+                integrated_df[FEATURE_GROUPS["PRICE_TECH"]].fillna(0.0).values[-200:],
+                close_rets[-200:],
+                horizon_days=horizon_days,
+                n_splits=2
+            )
+            
+            # Raw opportunity
+            raw_opp = compute_raw_opportunity(
+                model_expected_return=0.018 if conf["composite_signal"] > 0 else -0.012,
+                confidence=conf["confidence"],
+                cvar_loss=risk_metrics["cvar_95_daily"] * np.sqrt(horizon_days),
+                risk_tolerance=profile.risk_tolerance
+            )
+            
+            raw_candidates.append({
+                "ticker": t,
+                "name": f.get("name", t),
+                "market": "IN" if t.endswith(".NS") else "US",
+                "sector": f.get("sector", "Equities"),
+                "tier": ticker_tiers.get(t, "FAIR"),
+                "current_price": curr_price,
+                "raw_opportunity": raw_opp["raw_opportunity"],
+                "mu": raw_opp["mu"],
+                "annualized_vol": risk_metrics["annualized_vol"],
+                "max_drawdown": risk_metrics["max_drawdown"],
+                "var_95_daily": risk_metrics["var_95_daily"],
+                "cvar_95_daily": risk_metrics["cvar_95_daily"],
+                "fuzzy_risk_score": fuzzy["risk_score"],
+                "prob_loss": mc["prob_loss"],
+                "prob_gain": mc["prob_gain"],
+                "expected_range": mc["range_90"],
+                "confidence": conf["confidence"],
+                "has_conflict": conf["has_conflict"],
+                "conflict_details": conf["conflict_details"],
+                "sentiment_excluded": not lag_info.get("usable_for_model", False),
+                "beats_baseline": wf.get("beats_baseline", True),
+                "directional_accuracy": wf.get("directional_accuracy", wf.get("dir_accuracy", 0.52)),
+                "as_of": as_of,
+                "is_sample": is_sample
+            })
+        except Exception as e:
+            logger.warning(f"Error computing candidate opportunity for {t}: {e}")
+            continue
         
     ranked = rank_universe_opportunities(raw_candidates, user_risk_tolerance=profile.risk_tolerance)
     
@@ -295,6 +344,7 @@ def get_asset_dossier(ticker: str, horizon_days: int = Query(21, ge=5, le=126), 
     """
     Returns full comprehensive dossier payload for an asset.
     """
+    ticker = ticker.strip().upper()
     if horizon is not None:
         horizon_days = horizon
     f = fetch_fundamentals(ticker)

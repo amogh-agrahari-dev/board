@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 
 interface NavigationProps {
   currentView: string;
@@ -8,6 +8,7 @@ interface NavigationProps {
   refreshing: boolean;
   refreshProgress: string;
   onTriggerRefresh: () => void;
+  onSelectAsset?: (ticker: string) => void;
 }
 
 export const Navigation: React.FC<NavigationProps> = ({
@@ -17,8 +18,10 @@ export const Navigation: React.FC<NavigationProps> = ({
   asOf,
   refreshing,
   refreshProgress,
-  onTriggerRefresh
+  onTriggerRefresh,
+  onSelectAsset
 }) => {
+  const [quickTicker, setQuickTicker] = useState("");
   const navItems = [
     { id: "board", label: "THE BOARD" },
     { id: "profile", label: "PROFILE" },
@@ -55,6 +58,57 @@ export const Navigation: React.FC<NavigationProps> = ({
             AS-OF: {asOf ? asOf.slice(0, 16).replace("T", " ") : "2026-10-27"}
           </div>
         </div>
+
+        {/* Quick Ticker Lookup */}
+        {onSelectAsset && (
+          <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--ink)", backgroundColor: "var(--paper)" }}>
+            <div className="mono" style={{ fontSize: "10px", fontWeight: 700, color: "var(--mute)", marginBottom: "6px" }}>
+              LOOKUP TICKER DOSSIER:
+            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (quickTicker.trim()) {
+                  onSelectAsset(quickTicker.trim().toUpperCase());
+                  setQuickTicker("");
+                }
+              }}
+              style={{ display: "flex", gap: "4px" }}
+            >
+              <input
+                type="text"
+                value={quickTicker}
+                onChange={(e) => setQuickTicker(e.target.value.toUpperCase())}
+                placeholder="E.G. NVDA, TCS.NS"
+                className="mono"
+                style={{
+                  flex: 1,
+                  padding: "5px 8px",
+                  fontSize: "11px",
+                  border: "1px solid var(--ink)",
+                  borderRadius: 0,
+                  backgroundColor: "var(--paper)",
+                  color: "var(--ink)"
+                }}
+              />
+              <button
+                type="submit"
+                className="btn-inverted"
+                style={{
+                  padding: "5px 10px",
+                  fontSize: "11px",
+                  fontWeight: 800,
+                  border: "1px solid var(--ink)",
+                  borderRadius: 0,
+                  cursor: "pointer",
+                  boxShadow: "none"
+                }}
+              >
+                GO →
+              </button>
+            </form>
+          </div>
+        )}
 
         {/* Navigation Links */}
         <nav style={{ display: "flex", flexDirection: "column" }}>
